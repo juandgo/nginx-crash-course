@@ -1,0 +1,116 @@
+# Number of worker processes that handle incoming requests.
+# For production, you usually use: worker_processes auto;
+worker_processes 1;
+
+events {
+
+    # Maximum number of simultaneous connections each worker can handle.
+    worker_connections 1024;
+}
+
+http {
+
+    # Load MIME types (maps file extensions to Content-Types).
+    # Example:
+    # .html -> text/html
+    # .css  -> text/css
+    # .js   -> application/javascript
+    include mime.types;
+
+    ##########################################################
+    # BACKEND SERVERS (LOAD BALANCER)
+    ##########################################################
+
+    # Defines a group of backend servers.
+    # Nginx will distribute requests among these servers.
+    upstream nodejs_cluster {
+
+        # Load balancing method.
+        # Send each new request to the server with the fewest
+        # active connections.
+        least_conn;
+
+        # Backend Node.js applications.
+        server 127.0.0.1:3001;
+        server 127.0.0.1:3002;
+        server 127.0.0.1:3003;
+    }
+
+    ##########################################################
+    # HTTPS SERVER
+    ##########################################################
+
+    server {
+
+        # Listen on HTTPS port.
+        listen 443 ssl;
+
+        # Hostname this server responds to.
+        server_name localhost;
+
+        ######################################################
+        # SSL CERTIFICATES
+        ######################################################
+
+        # Public SSL certificate.
+        ssl_certificate /home/juanda/nginx-certs/nginx-selfsigned.crt;
+
+        # Private SSL key.
+        ssl_certificate_key /home/juanda/nginx-certs/nginx-selfsigned.key;
+
+        ######################################################
+        # REQUEST HANDLING
+        ######################################################
+
+        location / {
+
+            # Forward every request to the Node.js cluster.
+            proxy_pass http://nodejs_cluster;
+
+            # Pass the original Host header.
+            # Using $host is recommended instead of a fixed value.
+            proxy_set_header Host $host;
+
+            # Forward the client's real IP address to the backend.
+            proxy_set_header X-Real-IP $remote_addr;
+
+            # Forward the original client IP chain (recommended).
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+            # Tell the backend whether the original request
+            # used HTTP or HTTPS.
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+    }
+
+    ##########################################################
+    # HTTP SERVER
+    ##########################################################
+
+    server {
+
+        # Listen on HTTP.
+        listen 8080;
+
+        server_name localhost;
+
+        ######################################################
+        # REDIRECT HTTP -> HTTPS
+        ######################################################
+
+        location / {
+
+            # Permanent redirect (301) to HTTPS.
+            #
+            # Example:
+            #
+            # http://localhost:8080/login
+            #
+            # becomes
+            #
+            # https://localhost/login
+            #
+            return 301 https://$host$request_uri;
+        }
+    }
+}
